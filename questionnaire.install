@@ -1,0 +1,223 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function questionnaire_install() {
+
+  node_types_rebuild();
+  $types = node_type_get_types();
+  // // node_add_body_field($types['questionnaire']);
+  // // node_add_body_field($types['question']);
+  add_custom_fields();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function questionnaire_uninstall() {
+  $content_type = array('questionnaire', 'question');
+  $nodeids = array();
+  foreach ($content_type as $type) {
+    $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+    $result = db_query($sql, array(':type' => $type));
+    foreach ($result as $row) {
+      $nodeids[] = $row->nid;
+    }
+  }
+  node_delete_multiple($nodeids);
+  delete_custom_fields();
+
+  foreach ($content_type as $type) {
+    node_type_delete($type);
+  }
+  field_purge_batch(500);
+}
+
+function _question_installed_fields() {
+  $t = get_t();
+  return array(
+    'possible_answers' => array(
+      'field_name' => 'possible_answers',
+      'label' => $t('Possible Answers'),
+      'type' => 'text',
+      'cardinality' => -1,
+      'required' => 1,
+    ),
+    'actual_answer' => array(
+      'field_name' => 'actual_answer',
+      'label' => $t('Actual Answer'),
+      'type' => 'text',
+      'required' => 1,
+    ),
+    'complexity' => array(
+      'field_name' => 'complexity',
+      'label' => $t('Complexity of Question'),
+      'type' => 'list_integer',
+      'required' => 1,
+      'settings' => array(
+        'allowed_values' => array(
+          1 => 1,
+          2 => 2,
+          3 => 3,
+          4 => 4,
+          5 => 5,
+        ),
+        'allowed_values_function' => '',
+      ),
+    )
+  );
+}
+
+function _question_installed_instances() {
+  $t = get_t();
+  return array(
+    'possible_answers' => array(
+      'field_name' => 'possible_answers',
+      'type' => 'text',
+      'label' => $t('Options'),
+      'cardinality' => -1,
+      'required' => 1,
+      'widget' => array(
+        'type' => 'text_textfield'
+      ),
+      'display' => array(
+        'example_node_list' => array(
+          'label' => $t('Options'),
+          'type' => 'text'
+        )
+      )
+    ),
+    'actual_answer' => array(
+      'field_name' => 'actual_answer',
+      'type' => 'text',
+      'label' => $t('Answer'),
+      'required' => 1,
+      'widget' => array(
+        'type' => 'text_textfield'
+      ),
+      'display' => array(
+        'example_node_list' => array(
+          'label' => $t('Answer'),
+          'type' => 'text'
+        )
+      ),
+    ),
+    'complexity' => array(
+      'field_name' => 'complexity',
+      'type' => 'list_integer',
+      'label' => $t('Complexity of Question'),
+      'required' => 1,
+      'widget' => array(
+        'type' => 'options_select'
+      ),
+      'display' => array(
+        'example_node_list' => array(
+          'label' => $t('Complexity of Question'),
+          'type' => 'list_integer'
+        )
+      ),
+    ),
+  );
+}
+
+/*
+ * Creating field for Question content type.
+ */
+function add_custom_fields() {
+  foreach (_question_installed_fields() as $field) {
+    field_create_field($field);
+  }
+  foreach (_question_installed_instances() as $fieldinstance) {
+    $fieldinstance['entity_type'] = 'node';
+    $fieldinstance['bundle'] = 'question';
+    field_create_instance($fieldinstance);
+  }
+  _create_field_collection();
+}
+
+function delete_custom_fields() {
+
+  // Deleting the field instance of Question Content type.
+  foreach (array_keys(_question_installed_fields()) as $field) {
+    field_delete_field($field);
+  }
+  $instances = field_info_instances('node', 'question');
+  foreach ($instances as $instance_name => $fieldinstance) {
+    field_delete_instance($fieldinstance);
+  }
+
+  // Deleting the fields of Questionnaire content type.
+  // foreach (_create_field_collection() as $field) {
+  //   field_delete_field($field);
+  // }
+  // $instances = field_info_instances('node', 'questionnaire');
+  // foreach ($instances as $instance_name => $fieldinstance) {
+  //   field_delete_instance($fieldinstance);
+  // }
+}
+
+/**
+ * Create a Field Collection field and attach collection node reference
+ */
+function _create_field_collection() {
+  $t = get_t();
+
+  $fields_array = array(
+    array(
+      'field' => array(
+        'field_name' => 'question_collection',
+        'label' => $t('Questions'),
+        'cardinality' => -1,
+        'type' => 'field_collection',
+      ),
+      'instance' => array(
+        'field_name' => 'question_collection',
+        'entity_type' => 'node',
+        'bundle' => 'questionnaire',
+        'label' => $t('Questions'),
+        'description' => '',
+        'widget' => array('type' => 'field_collection_embed'),
+        'required' => 1,
+      ),
+    ),
+    array(
+      'field' => array(
+        'field_name' => 'field_questions',
+        'type' => 'entityreference',
+        'label' => 'Question',
+        'cardinality' => 1,
+      ),
+      'instance' => array(
+        'field_name' => 'field_questions',
+        'entity_type' => 'field_collection_item',
+        'bundle' => 'question_collection',
+        'label' => 'Question',
+        'cardinality' => 1,
+        'description' => '',
+        'widget' => array(
+          'type' => 'entityreference_autocomplete'
+        ),
+        'display' => array(
+          'example_node_list' => array(
+            'label' => $t('Question'),
+            'type' => 'entityreference_default'
+          )
+        )
+      )
+    ),
+  );
+
+  // Loop through fields array and create field and instance
+  foreach ($fields_array as $field) {
+    // Check if field already exists
+    if (!field_info_field($field['field']['field_name'])) {
+      field_create_field($field['field']);
+    }
+
+    // Check if instance exists
+    if (!field_info_instance($field['instance']['entity_type'], $field['instance']['field_name'], $field['instance']['bundle'])) {
+      field_create_instance($field['instance']);
+    }
+  }
+}

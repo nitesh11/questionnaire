@@ -1,0 +1,7 @@
+name = Questionnaire
+description = A new content type of Questionnaire
+package = Questionnaire
+core = 7.x
+
+dependencies[] = field_collection
+dependencies[] = entityreference
